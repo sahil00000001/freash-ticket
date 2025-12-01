@@ -1,14 +1,9 @@
-// server.js - Freshservice Ticket Analyzer API
-// Deploy on Render.com
-
+// server.js - Freshservice Ticket Analyzer API for Render
 require('dotenv').config();
 const express = require('express');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const fs = require('fs');
-const path = require('path');
-
-puppeteer.use(StealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -63,6 +58,29 @@ function analyzeTickets(tickets) {
   };
 }
 
+// ============ BROWSER LAUNCH ============
+async function launchBrowser() {
+  const isRender = process.env.RENDER === 'true' || process.env.NODE_ENV === 'production';
+  
+  if (isRender) {
+    return puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless
+    });
+  } else {
+    // Local development - use installed Chrome
+    return puppeteer.launch({
+      headless: false,
+      executablePath: process.platform === 'win32' 
+        ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+        : '/usr/bin/google-chrome',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+  }
+}
+
 // ============ FRESHSERVICE FUNCTIONS ============
 async function saveCookies(page) {
   const cookies = await page.cookies();
@@ -81,22 +99,26 @@ async function loadCookies(page) {
 }
 
 async function login(page) {
-  await page.goto(`https://${CONFIG.domain}/login`, { waitUntil: 'networkidle2' });
-  await page.waitForSelector('input[type="email"], input[name="email"], #user_email');
+  console.log('Logging in...');
+  await page.goto(`https://${CONFIG.domain}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
+  
+  await page.waitForSelector('input[type="email"], input[name="email"], #user_email', { timeout: 10000 });
   await page.type('input[type="email"], input[name="email"], #user_email', CONFIG.email);
   await page.type('input[type="password"], input[name="password"], #user_password', CONFIG.password);
   await page.click('button[type="submit"], input[type="submit"], .login-btn');
-  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
   
   if (page.url().includes('/login')) {
-    throw new Error('Login failed');
+    throw new Error('Login failed - check credentials');
   }
+  
+  console.log('Login successful');
   await saveCookies(page);
 }
 
 async function isSessionValid(page) {
   try {
-    await page.goto(`https://${CONFIG.domain}/a/tickets`, { waitUntil: 'networkidle2', timeout: 15000 });
+    await page.goto(`https://${CONFIG.domain}/a/tickets`, { waitUntil: 'networkidle2', timeout: 30000 });
     return !page.url().includes('/login');
   } catch { return false; }
 }
@@ -146,21 +168,13 @@ async function fetchTickets(page, options = {}) {
 
 // ============ MAIN FETCH FUNCTION ============
 async function getTicketAnalysis(options = {}) {
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--single-process'
-    ]
-  });
-
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1280, height: 800 });
-
+  let browser;
+  
   try {
+    browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
+
     const hasCookies = await loadCookies(page);
     
     if (!hasCookies || !(await isSessionValid(page))) {
@@ -173,32 +187,29 @@ async function getTicketAnalysis(options = {}) {
     return { success: true, data: analysis };
 
   } catch (error) {
+    console.error('Error:', error.message);
     return { success: false, error: error.message };
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
 }
 
 // ============ API ROUTES ============
-
-// Health check
 app.get('/', (req, res) => {
   res.json({ 
     status: 'ok', 
     service: 'Freshservice Ticket Analyzer',
     endpoints: {
-      '/': 'Health check',
-      '/api/tickets': 'Get ticket analysis (query: ?minutes=1440)',
-      '/api/tickets/fresh': 'Get only fresh/unattended tickets',
-      '/api/tickets/summary': 'Get summary only'
+      'GET /api/tickets': 'Full ticket analysis',
+      'GET /api/tickets?minutes=720': 'Tickets from last 12 hours',
+      'GET /api/tickets/fresh': 'Only unattended tickets',
+      'GET /api/tickets/summary': 'Summary counts only'
     }
   });
 });
 
-// Get all tickets with analysis
 app.get('/api/tickets', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  
   console.log(`[${new Date().toISOString()}] Fetching tickets (last ${minutes} mins)...`);
   
   const result = await getTicketAnalysis({ minutes });
@@ -207,15 +218,12 @@ app.get('/api/tickets', async (req, res) => {
     console.log(`[${new Date().toISOString()}] Found ${result.data.total_tickets} tickets`);
     res.json(result.data);
   } else {
-    console.error(`[${new Date().toISOString()}] Error: ${result.error}`);
     res.status(500).json({ error: result.error });
   }
 });
 
-// Get only fresh/unattended tickets
 app.get('/api/tickets/fresh', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  
   const result = await getTicketAnalysis({ minutes });
   
   if (result.success) {
@@ -230,10 +238,8 @@ app.get('/api/tickets/fresh', async (req, res) => {
   }
 });
 
-// Get summary only
 app.get('/api/tickets/summary', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  
   const result = await getTicketAnalysis({ minutes });
   
   if (result.success) {
@@ -247,10 +253,6 @@ app.get('/api/tickets/summary', async (req, res) => {
   }
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Freshservice API running on port ${PORT}`);
-  console.log(`   GET /api/tickets - Full analysis`);
-  console.log(`   GET /api/tickets/fresh - Fresh tickets only`);
-  console.log(`   GET /api/tickets/summary - Summary only`);
 });

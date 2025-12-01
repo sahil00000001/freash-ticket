@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: freshservice-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RENDER
+        value: true
+      - key: FRESHSERVICE_EMAIL
+        sync: false
+      - key: FRESHSERVICE_PASSWORD
+        sync: false
