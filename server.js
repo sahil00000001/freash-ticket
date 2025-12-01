@@ -1,26 +1,34 @@
-// server.js - Freshservice Ticket Analyzer API for Render
+// server.js - Freshservice Ticket Analyzer API (Lightweight)
+// No Puppeteer - uses direct HTTP requests
+
 require('dotenv').config();
 const express = require('express');
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Store session cookies (set via /api/set-cookies endpoint)
+let SESSION_COOKIES = process.env.FRESHSERVICE_COOKIES || '';
+
 const CONFIG = {
   domain: 'yondrgroup.freshservice.com',
-  email: process.env.FRESHSERVICE_EMAIL,
-  password: process.env.FRESHSERVICE_PASSWORD,
-  cookiesPath: '/tmp/freshservice-cookies.json',
   filterId: '27000160172',
   groupId: '27000189625',
   workspaceId: 2,
   createdWithinMinutes: 1440
 };
 
+// ============ LOGGING HELPER ============
+function log(message, data = null) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${message}`);
+  if (data) console.log(JSON.stringify(data, null, 2));
+}
+
 // ============ LOCAL ANALYSIS ============
 function analyzeTickets(tickets) {
+  log(`Analyzing ${tickets.length} tickets...`);
+  
   const priorityMap = { 1: 'P4', 2: 'P3', 3: 'P2', 4: 'P1' };
   
   const analyzedTickets = tickets.map(t => {
@@ -43,7 +51,7 @@ function analyzeTickets(tickets) {
     };
   });
 
-  return {
+  const analysis = {
     analysis_timestamp: new Date().toISOString(),
     total_tickets: tickets.length,
     summary: {
@@ -56,81 +64,29 @@ function analyzeTickets(tickets) {
     },
     tickets: analyzedTickets
   };
+
+  log('Analysis complete', { total: analysis.total_tickets, summary: analysis.summary });
+  return analysis;
 }
 
-// ============ BROWSER LAUNCH ============
-async function launchBrowser() {
-  const isRender = process.env.RENDER === 'true' || process.env.NODE_ENV === 'production';
-  
-  if (isRender) {
-    return puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless
-    });
-  } else {
-    // Local development - use installed Chrome
-    return puppeteer.launch({
-      headless: false,
-      executablePath: process.platform === 'win32' 
-        ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-        : '/usr/bin/google-chrome',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-  }
-}
-
-// ============ FRESHSERVICE FUNCTIONS ============
-async function saveCookies(page) {
-  const cookies = await page.cookies();
-  fs.writeFileSync(CONFIG.cookiesPath, JSON.stringify(cookies, null, 2));
-}
-
-async function loadCookies(page) {
-  try {
-    if (fs.existsSync(CONFIG.cookiesPath)) {
-      const cookies = JSON.parse(fs.readFileSync(CONFIG.cookiesPath));
-      await page.setCookie(...cookies);
-      return true;
-    }
-  } catch (e) {}
-  return false;
-}
-
-async function login(page) {
-  console.log('Logging in...');
-  await page.goto(`https://${CONFIG.domain}/login`, { waitUntil: 'networkidle2', timeout: 60000 });
-  
-  await page.waitForSelector('input[type="email"], input[name="email"], #user_email', { timeout: 10000 });
-  await page.type('input[type="email"], input[name="email"], #user_email', CONFIG.email);
-  await page.type('input[type="password"], input[name="password"], #user_password', CONFIG.password);
-  await page.click('button[type="submit"], input[type="submit"], .login-btn');
-  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
-  
-  if (page.url().includes('/login')) {
-    throw new Error('Login failed - check credentials');
-  }
-  
-  console.log('Login successful');
-  await saveCookies(page);
-}
-
-async function isSessionValid(page) {
-  try {
-    await page.goto(`https://${CONFIG.domain}/a/tickets`, { waitUntil: 'networkidle2', timeout: 30000 });
-    return !page.url().includes('/login');
-  } catch { return false; }
-}
-
-async function fetchTickets(page, options = {}) {
+// ============ FETCH TICKETS (Direct HTTP) ============
+async function fetchTicketsFromAPI(options = {}) {
   const { minutes = CONFIG.createdWithinMinutes } = options;
   
+  log(`Starting ticket fetch (last ${minutes} minutes)`);
+  
+  if (!SESSION_COOKIES) {
+    log('ERROR: No session cookies set!');
+    throw new Error('No session cookies. Call POST /api/set-cookies first');
+  }
+
   const queryHash = JSON.stringify([
     { value: [{ id: CONFIG.workspaceId }], condition: 'workspace_id', operator: 'is_in', type: 'default' },
     { value: [CONFIG.groupId], condition: 'group_id', operator: 'is_in', type: 'default' },
     { value: String(minutes), condition: 'created_at', operator: 'is_greater_than', type: 'default' }
   ]);
+
+  log('Query hash built', { workspaceId: CONFIG.workspaceId, groupId: CONFIG.groupId });
 
   const allTickets = [];
   let currentPage = 1;
@@ -150,56 +106,66 @@ async function fetchTickets(page, options = {}) {
     });
 
     const url = `https://${CONFIG.domain}/api/_/tickets?${params}`;
-    
-    const response = await page.evaluate(async (apiUrl) => {
-      const res = await fetch(apiUrl, { credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    }, url);
+    log(`Fetching page ${currentPage}...`);
+    log(`URL: ${url.substring(0, 100)}...`);
 
-    const tickets = response.tickets || [];
-    allTickets.push(...tickets);
-    hasMore = tickets.length === 100;
-    currentPage++;
+    try {
+      const startTime = Date.now();
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': '*/*',
+          'Cookie': SESSION_COOKIES,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      const elapsed = Date.now() - startTime;
+      log(`Response received in ${elapsed}ms - Status: ${response.status}`);
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          log('ERROR: Session expired or invalid cookies');
+          throw new Error('Session expired. Update cookies via POST /api/set-cookies');
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const tickets = data.tickets || [];
+      
+      log(`Page ${currentPage}: Found ${tickets.length} tickets`);
+      
+      allTickets.push(...tickets);
+      hasMore = tickets.length === 100;
+      currentPage++;
+
+    } catch (fetchError) {
+      log(`ERROR on page ${currentPage}: ${fetchError.message}`);
+      throw fetchError;
+    }
   }
 
+  log(`Total tickets fetched: ${allTickets.length}`);
   return allTickets;
 }
 
-// ============ MAIN FETCH FUNCTION ============
-async function getTicketAnalysis(options = {}) {
-  let browser;
-  
-  try {
-    browser = await launchBrowser();
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
-
-    const hasCookies = await loadCookies(page);
-    
-    if (!hasCookies || !(await isSessionValid(page))) {
-      await login(page);
-    }
-
-    const tickets = await fetchTickets(page, options);
-    const analysis = analyzeTickets(tickets);
-    
-    return { success: true, data: analysis };
-
-  } catch (error) {
-    console.error('Error:', error.message);
-    return { success: false, error: error.message };
-  } finally {
-    if (browser) await browser.close();
-  }
-}
-
 // ============ API ROUTES ============
+
+// Middleware to parse JSON
+app.use(express.json());
+
+// Health check
 app.get('/', (req, res) => {
+  log('Health check called');
   res.json({ 
     status: 'ok', 
     service: 'Freshservice Ticket Analyzer',
+    cookies_set: !!SESSION_COOKIES,
     endpoints: {
+      'GET /': 'Health check',
+      'POST /api/set-cookies': 'Set session cookies (body: { cookies: "..." })',
       'GET /api/tickets': 'Full ticket analysis',
       'GET /api/tickets?minutes=720': 'Tickets from last 12 hours',
       'GET /api/tickets/fresh': 'Only unattended tickets',
@@ -208,51 +174,112 @@ app.get('/', (req, res) => {
   });
 });
 
+// Set cookies endpoint
+app.post('/api/set-cookies', (req, res) => {
+  log('Set cookies endpoint called');
+  
+  const { cookies } = req.body;
+  
+  if (!cookies) {
+    log('ERROR: No cookies provided');
+    return res.status(400).json({ error: 'Missing cookies in request body' });
+  }
+
+  SESSION_COOKIES = cookies;
+  log('Cookies updated successfully', { length: cookies.length });
+  
+  res.json({ 
+    success: true, 
+    message: 'Cookies set successfully',
+    cookies_length: cookies.length 
+  });
+});
+
+// Get cookies status
+app.get('/api/cookies-status', (req, res) => {
+  log('Cookies status check');
+  res.json({
+    cookies_set: !!SESSION_COOKIES,
+    cookies_length: SESSION_COOKIES.length
+  });
+});
+
+// Get all tickets with analysis
 app.get('/api/tickets', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  console.log(`[${new Date().toISOString()}] Fetching tickets (last ${minutes} mins)...`);
+  log(`=== GET /api/tickets called (minutes: ${minutes}) ===`);
   
-  const result = await getTicketAnalysis({ minutes });
-  
-  if (result.success) {
-    console.log(`[${new Date().toISOString()}] Found ${result.data.total_tickets} tickets`);
-    res.json(result.data);
-  } else {
-    res.status(500).json({ error: result.error });
+  try {
+    log('Step 1: Fetching tickets from Freshservice...');
+    const tickets = await fetchTicketsFromAPI({ minutes });
+    
+    log('Step 2: Analyzing tickets...');
+    const analysis = analyzeTickets(tickets);
+    
+    log('Step 3: Sending response...');
+    res.json(analysis);
+    
+    log('=== Request completed successfully ===');
+    
+  } catch (error) {
+    log(`ERROR: ${error.message}`);
+    res.status(500).json({ 
+      error: error.message,
+      hint: error.message.includes('cookies') ? 'Set cookies via POST /api/set-cookies' : null
+    });
   }
 });
 
+// Get only fresh/unattended tickets
 app.get('/api/tickets/fresh', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  const result = await getTicketAnalysis({ minutes });
+  log(`=== GET /api/tickets/fresh called (minutes: ${minutes}) ===`);
   
-  if (result.success) {
-    const freshTickets = result.data.tickets.filter(t => t.attendance_status === 'FRESH');
+  try {
+    const tickets = await fetchTicketsFromAPI({ minutes });
+    const analysis = analyzeTickets(tickets);
+    const freshTickets = analysis.tickets.filter(t => t.attendance_status === 'FRESH');
+    
+    log(`Found ${freshTickets.length} fresh tickets`);
+    
     res.json({
-      analysis_timestamp: result.data.analysis_timestamp,
+      analysis_timestamp: analysis.analysis_timestamp,
       total_fresh: freshTickets.length,
       tickets: freshTickets
     });
-  } else {
-    res.status(500).json({ error: result.error });
+    
+  } catch (error) {
+    log(`ERROR: ${error.message}`);
+    res.status(500).json({ error: error.message });
   }
 });
 
+// Get summary only
 app.get('/api/tickets/summary', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  const result = await getTicketAnalysis({ minutes });
+  log(`=== GET /api/tickets/summary called (minutes: ${minutes}) ===`);
   
-  if (result.success) {
+  try {
+    const tickets = await fetchTicketsFromAPI({ minutes });
+    const analysis = analyzeTickets(tickets);
+    
     res.json({
-      analysis_timestamp: result.data.analysis_timestamp,
-      total_tickets: result.data.total_tickets,
-      summary: result.data.summary
+      analysis_timestamp: analysis.analysis_timestamp,
+      total_tickets: analysis.total_tickets,
+      summary: analysis.summary
     });
-  } else {
-    res.status(500).json({ error: result.error });
+    
+  } catch (error) {
+    log(`ERROR: ${error.message}`);
+    res.status(500).json({ error: error.message });
   }
 });
 
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Freshservice API running on port ${PORT}`);
+  log(`🚀 Freshservice API running on port ${PORT}`);
+  log(`Cookies pre-set: ${!!SESSION_COOKIES}`);
+  if (!SESSION_COOKIES) {
+    log('⚠️  No cookies set. Use POST /api/set-cookies or set FRESHSERVICE_COOKIES env var');
+  }
 });
