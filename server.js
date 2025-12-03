@@ -74,15 +74,30 @@ function analyzeTickets(tickets) {
   return analysis;
 }
 
-async function fetchTicketsFromAPI(options = {}) {
-  const { minutes = CONFIG.createdWithinMinutes } = options;
-  
-  log(`Starting ticket fetch (last ${minutes} minutes)`);
+function getTodayMidnight() {
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  return midnight.toISOString().split('.')[0] + 'Z';
+}
 
+async function fetchTicketsFromAPI(options = {}) {
+  const { minutes = CONFIG.createdWithinMinutes, filter = null } = options;
+  
   const authHeader = getAuthHeader();
   
-  const cutoffDate = new Date(Date.now() - minutes * 60 * 1000);
-  const dateStr = cutoffDate.toISOString().split('.')[0] + 'Z';
+  let dateStr;
+  let filterDescription;
+  
+  if (filter === 'today') {
+    dateStr = getTodayMidnight();
+    filterDescription = "today's tickets";
+  } else {
+    const cutoffDate = new Date(Date.now() - minutes * 60 * 1000);
+    dateStr = cutoffDate.toISOString().split('.')[0] + 'Z';
+    filterDescription = `last ${minutes} minutes`;
+  }
+  
+  log(`Starting ticket fetch (${filterDescription})`);
 
   const allTickets = [];
   let currentPage = 1;
@@ -213,10 +228,13 @@ app.get('/', async (req, res) => {
     },
     endpoints: {
       'GET /': 'Health check with connection test',
-      'GET /api/tickets': 'Full ticket analysis',
-      'GET /api/tickets?minutes=720': 'Tickets from last 12 hours',
+      'GET /api/tickets': 'Full ticket analysis (default: last 24 hours)',
+      'GET /api/tickets?minutes=1440': 'Tickets from last 24 hours',
+      'GET /api/tickets?filter=today': 'Tickets created today',
       'GET /api/tickets/fresh': 'Only unattended tickets',
-      'GET /api/tickets/summary': 'Summary counts only'
+      'GET /api/tickets/fresh?filter=today': 'Unattended tickets created today',
+      'GET /api/tickets/summary': 'Summary counts only',
+      'GET /api/tickets/summary?filter=today': 'Summary of today\'s tickets'
     },
     setup: !apiKeySet ? {
       required_env_vars: [
@@ -241,11 +259,12 @@ app.get('/', async (req, res) => {
 
 app.get('/api/tickets', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  log(`=== GET /api/tickets called (minutes: ${minutes}) ===`);
+  const filter = req.query.filter || null;
+  log(`=== GET /api/tickets called (minutes: ${minutes}, filter: ${filter || 'none'}) ===`);
   
   try {
     log('Step 1: Fetching tickets from Freshservice...');
-    const tickets = await fetchTicketsFromAPI({ minutes });
+    const tickets = await fetchTicketsFromAPI({ minutes, filter });
     
     log('Step 2: Analyzing tickets...');
     const analysis = analyzeTickets(tickets);
@@ -267,10 +286,11 @@ app.get('/api/tickets', async (req, res) => {
 
 app.get('/api/tickets/fresh', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  log(`=== GET /api/tickets/fresh called (minutes: ${minutes}) ===`);
+  const filter = req.query.filter || null;
+  log(`=== GET /api/tickets/fresh called (minutes: ${minutes}, filter: ${filter || 'none'}) ===`);
   
   try {
-    const tickets = await fetchTicketsFromAPI({ minutes });
+    const tickets = await fetchTicketsFromAPI({ minutes, filter });
     const analysis = analyzeTickets(tickets);
     const freshTickets = analysis.tickets.filter(t => t.attendance_status === 'FRESH');
     
@@ -290,10 +310,11 @@ app.get('/api/tickets/fresh', async (req, res) => {
 
 app.get('/api/tickets/summary', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  log(`=== GET /api/tickets/summary called (minutes: ${minutes}) ===`);
+  const filter = req.query.filter || null;
+  log(`=== GET /api/tickets/summary called (minutes: ${minutes}, filter: ${filter || 'none'}) ===`);
   
   try {
-    const tickets = await fetchTicketsFromAPI({ minutes });
+    const tickets = await fetchTicketsFromAPI({ minutes, filter });
     const analysis = analyzeTickets(tickets);
     
     res.json({

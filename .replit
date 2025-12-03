@@ -36,3 +36,8 @@ externalPort = 3000
 [deployment]
 deploymentTarget = "autoscale"
 run = ["npm", "start"]
+
+[userenv]
+
+[userenv.shared]
+FRESHSERVICE_API_KEY = "LSuyPCYUJP8q78WGoB50"
