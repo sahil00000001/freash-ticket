@@ -4,17 +4,18 @@
   "description": "Freshservice Ticket Analyzer API",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "get-cookies": "node get-cookies.js"
+    "start": "node server.js"
   },
   "engines": {
-    "node": "18.x"
+    "node": "20.x"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2"
-  },
-  "devDependencies": {
-    "puppeteer": "^21.6.1"
+    "@sparticuz/chromium": "^141.0.0",
+    "axios": "^1.13.2",
+    "axios-cookiejar-support": "^6.0.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "puppeteer-core": "^24.32.0",
+    "tough-cookie": "^6.0.0"
   }
 }

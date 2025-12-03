@@ -1,31 +1,143 @@
-// server.js - Freshservice Ticket Analyzer API (Lightweight)
-// No Puppeteer - uses direct HTTP requests
+// server.js - Freshservice Ticket Analyzer API
+// Uses puppeteer-core with @sparticuz/chromium (serverless-optimized)
 
 require('dotenv').config();
 const express = require('express');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Store session cookies (set via /api/set-cookies endpoint)
-let SESSION_COOKIES = process.env.FRESHSERVICE_COOKIES || '';
-
 const CONFIG = {
-  domain: 'yondrgroup.freshservice.com',
-  filterId: '27000160172',
-  groupId: '27000189625',
-  workspaceId: 2,
+  domain: process.env.FRESHSERVICE_DOMAIN || 'yondrgroup.freshservice.com',
+  email: process.env.FRESHSERVICE_EMAIL || '',
+  password: process.env.FRESHSERVICE_PASSWORD || '',
+  filterId: process.env.FRESHSERVICE_FILTER_ID || '27000160172',
+  groupId: process.env.FRESHSERVICE_GROUP_ID || '27000189625',
+  workspaceId: parseInt(process.env.FRESHSERVICE_WORKSPACE_ID) || 2,
   createdWithinMinutes: 1440
 };
 
-// ============ LOGGING HELPER ============
+let sessionCookies = null;
+let lastLoginTime = 0;
+const SESSION_VALIDITY = 30 * 60 * 1000;
+
 function log(message, data = null) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${message}`);
   if (data) console.log(JSON.stringify(data, null, 2));
 }
 
-// ============ LOCAL ANALYSIS ============
+async function getBrowser() {
+  log('Launching browser...');
+  
+  const isLocal = process.env.NODE_ENV !== 'production' && !process.env.RENDER;
+  
+  if (isLocal) {
+    const puppeteerFull = require('puppeteer');
+    return await puppeteerFull.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+  }
+  
+  return await puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless
+  });
+}
+
+async function loginAndGetCookies() {
+  if (!CONFIG.email || !CONFIG.password) {
+    throw new Error('Missing FRESHSERVICE_EMAIL or FRESHSERVICE_PASSWORD environment variables');
+  }
+
+  log('Starting browser-based login...');
+  let browser;
+  
+  try {
+    browser = await getBrowser();
+    const page = await browser.newPage();
+    
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    log(`Navigating to login page: https://${CONFIG.domain}/support/login`);
+    await page.goto(`https://${CONFIG.domain}/support/login`, { 
+      waitUntil: 'networkidle2',
+      timeout: 60000 
+    });
+
+    await page.waitForSelector('input[type="email"], input[name="email"], #user_email, input[placeholder*="email" i]', { timeout: 30000 });
+    log('Login form detected');
+
+    const emailSelector = await page.$('input[type="email"]') || 
+                          await page.$('input[name="email"]') || 
+                          await page.$('#user_email') ||
+                          await page.$('input[placeholder*="email" i]');
+    
+    if (emailSelector) {
+      await emailSelector.type(CONFIG.email, { delay: 50 });
+    }
+
+    const passwordSelector = await page.$('input[type="password"]') || 
+                             await page.$('input[name="password"]') || 
+                             await page.$('#user_password');
+    
+    if (passwordSelector) {
+      await passwordSelector.type(CONFIG.password, { delay: 50 });
+    }
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
+      page.click('button[type="submit"], input[type="submit"], .login-btn, button:has-text("Log in"), button:has-text("Sign in")')
+    ]);
+
+    await new Promise(r => setTimeout(r, 3000));
+
+    const currentUrl = page.url();
+    log(`Current URL after login: ${currentUrl}`);
+
+    if (currentUrl.includes('/login')) {
+      const errorText = await page.evaluate(() => {
+        const errorEl = document.querySelector('.error, .alert-danger, [class*="error"]');
+        return errorEl ? errorEl.textContent : null;
+      });
+      throw new Error(`Login failed: ${errorText || 'Invalid credentials'}`);
+    }
+
+    const cookies = await page.cookies();
+    log(`Login successful! Got ${cookies.length} cookies`);
+
+    sessionCookies = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    lastLoginTime = Date.now();
+
+    return sessionCookies;
+
+  } catch (error) {
+    log(`Login error: ${error.message}`);
+    throw error;
+  } finally {
+    if (browser) {
+      await browser.close();
+      log('Browser closed');
+    }
+  }
+}
+
+async function ensureValidSession() {
+  const now = Date.now();
+  const sessionExpired = !sessionCookies || (now - lastLoginTime > SESSION_VALIDITY);
+  
+  if (sessionExpired) {
+    log('Session expired or missing, logging in...');
+    await loginAndGetCookies();
+  }
+}
+
 function analyzeTickets(tickets) {
   log(`Analyzing ${tickets.length} tickets...`);
   
@@ -69,15 +181,13 @@ function analyzeTickets(tickets) {
   return analysis;
 }
 
-// ============ FETCH TICKETS (Direct HTTP) ============
-async function fetchTicketsFromAPI(options = {}) {
+async function fetchTicketsFromAPI(options = {}, retryOnAuth = true) {
   const { minutes = CONFIG.createdWithinMinutes } = options;
   
   log(`Starting ticket fetch (last ${minutes} minutes)`);
-  
-  if (!SESSION_COOKIES) {
-    log('ERROR: No session cookies set!');
-    throw new Error('No session cookies. Call POST /api/set-cookies first');
+
+  if (!sessionCookies) {
+    throw new Error('No session. Login required.');
   }
 
   const queryHash = JSON.stringify([
@@ -85,8 +195,6 @@ async function fetchTicketsFromAPI(options = {}) {
     { value: [CONFIG.groupId], condition: 'group_id', operator: 'is_in', type: 'default' },
     { value: String(minutes), condition: 'created_at', operator: 'is_greater_than', type: 'default' }
   ]);
-
-  log('Query hash built', { workspaceId: CONFIG.workspaceId, groupId: CONFIG.groupId });
 
   const allTickets = [];
   let currentPage = 1;
@@ -107,43 +215,43 @@ async function fetchTicketsFromAPI(options = {}) {
 
     const url = `https://${CONFIG.domain}/api/_/tickets?${params}`;
     log(`Fetching page ${currentPage}...`);
-    log(`URL: ${url.substring(0, 100)}...`);
 
     try {
-      const startTime = Date.now();
-      
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Accept': '*/*',
-          'Cookie': SESSION_COOKIES,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'Accept': 'application/json, text/plain, */*',
+          'Cookie': sessionCookies,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'X-Requested-With': 'XMLHttpRequest'
         }
       });
 
-      const elapsed = Date.now() - startTime;
-      log(`Response received in ${elapsed}ms - Status: ${response.status}`);
+      if (response.status === 401 || response.status === 403) {
+        if (retryOnAuth) {
+          log('Session expired, re-logging in...');
+          sessionCookies = null;
+          await loginAndGetCookies();
+          return fetchTicketsFromAPI(options, false);
+        }
+        throw new Error('Session expired and re-login failed');
+      }
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          log('ERROR: Session expired or invalid cookies');
-          throw new Error('Session expired. Update cookies via POST /api/set-cookies');
-        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
       const tickets = data.tickets || [];
-      
       log(`Page ${currentPage}: Found ${tickets.length} tickets`);
       
       allTickets.push(...tickets);
       hasMore = tickets.length === 100;
       currentPage++;
 
-    } catch (fetchError) {
-      log(`ERROR on page ${currentPage}: ${fetchError.message}`);
-      throw fetchError;
+    } catch (error) {
+      log(`ERROR on page ${currentPage}: ${error.message}`);
+      throw error;
     }
   }
 
@@ -151,65 +259,76 @@ async function fetchTicketsFromAPI(options = {}) {
   return allTickets;
 }
 
-// ============ API ROUTES ============
-
-// Middleware to parse JSON
 app.use(express.json());
 
-// Health check
 app.get('/', (req, res) => {
   log('Health check called');
+  const credentialsSet = !!(CONFIG.email && CONFIG.password);
+  
   res.json({ 
     status: 'ok', 
     service: 'Freshservice Ticket Analyzer',
-    cookies_set: !!SESSION_COOKIES,
+    authentication: {
+      method: 'Browser-based login (automatic)',
+      credentials_configured: credentialsSet,
+      session_active: !!sessionCookies,
+      session_age_minutes: sessionCookies ? Math.round((Date.now() - lastLoginTime) / 60000) : null
+    },
+    config: {
+      domain: CONFIG.domain,
+      workspace_id: CONFIG.workspaceId,
+      group_id: CONFIG.groupId,
+      filter_id: CONFIG.filterId
+    },
     endpoints: {
       'GET /': 'Health check',
-      'POST /api/set-cookies': 'Set session cookies (body: { cookies: "..." })',
+      'POST /api/login': 'Force re-login',
       'GET /api/tickets': 'Full ticket analysis',
       'GET /api/tickets?minutes=720': 'Tickets from last 12 hours',
       'GET /api/tickets/fresh': 'Only unattended tickets',
       'GET /api/tickets/summary': 'Summary counts only'
-    }
+    },
+    setup: !credentialsSet ? {
+      required_env_vars: [
+        'FRESHSERVICE_EMAIL - Your Freshservice login email',
+        'FRESHSERVICE_PASSWORD - Your Freshservice password'
+      ],
+      optional_env_vars: [
+        'FRESHSERVICE_DOMAIN - Default: yondrgroup.freshservice.com',
+        'FRESHSERVICE_FILTER_ID - Default: 27000160172',
+        'FRESHSERVICE_GROUP_ID - Default: 27000189625',
+        'FRESHSERVICE_WORKSPACE_ID - Default: 2'
+      ]
+    } : null
   });
 });
 
-// Set cookies endpoint
-app.post('/api/set-cookies', (req, res) => {
-  log('Set cookies endpoint called');
+app.post('/api/login', async (req, res) => {
+  log('Manual login requested');
   
-  const { cookies } = req.body;
-  
-  if (!cookies) {
-    log('ERROR: No cookies provided');
-    return res.status(400).json({ error: 'Missing cookies in request body' });
+  try {
+    await loginAndGetCookies();
+    res.json({ 
+      success: true, 
+      message: 'Login successful',
+      session_active: !!sessionCookies
+    });
+  } catch (error) {
+    log(`Login error: ${error.message}`);
+    res.status(401).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
-
-  SESSION_COOKIES = cookies;
-  log('Cookies updated successfully', { length: cookies.length });
-  
-  res.json({ 
-    success: true, 
-    message: 'Cookies set successfully',
-    cookies_length: cookies.length 
-  });
 });
 
-// Get cookies status
-app.get('/api/cookies-status', (req, res) => {
-  log('Cookies status check');
-  res.json({
-    cookies_set: !!SESSION_COOKIES,
-    cookies_length: SESSION_COOKIES.length
-  });
-});
-
-// Get all tickets with analysis
 app.get('/api/tickets', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
   log(`=== GET /api/tickets called (minutes: ${minutes}) ===`);
   
   try {
+    await ensureValidSession();
+    
     log('Step 1: Fetching tickets from Freshservice...');
     const tickets = await fetchTicketsFromAPI({ minutes });
     
@@ -225,17 +344,19 @@ app.get('/api/tickets', async (req, res) => {
     log(`ERROR: ${error.message}`);
     res.status(500).json({ 
       error: error.message,
-      hint: error.message.includes('cookies') ? 'Set cookies via POST /api/set-cookies' : null
+      hint: error.message.includes('credentials') ? 
+        'Set FRESHSERVICE_EMAIL and FRESHSERVICE_PASSWORD environment variables' : null
     });
   }
 });
 
-// Get only fresh/unattended tickets
 app.get('/api/tickets/fresh', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
   log(`=== GET /api/tickets/fresh called (minutes: ${minutes}) ===`);
   
   try {
+    await ensureValidSession();
+    
     const tickets = await fetchTicketsFromAPI({ minutes });
     const analysis = analyzeTickets(tickets);
     const freshTickets = analysis.tickets.filter(t => t.attendance_status === 'FRESH');
@@ -254,12 +375,13 @@ app.get('/api/tickets/fresh', async (req, res) => {
   }
 });
 
-// Get summary only
 app.get('/api/tickets/summary', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
   log(`=== GET /api/tickets/summary called (minutes: ${minutes}) ===`);
   
   try {
+    await ensureValidSession();
+    
     const tickets = await fetchTicketsFromAPI({ minutes });
     const analysis = analyzeTickets(tickets);
     
@@ -275,11 +397,13 @@ app.get('/api/tickets/summary', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  log(`🚀 Freshservice API running on port ${PORT}`);
-  log(`Cookies pre-set: ${!!SESSION_COOKIES}`);
-  if (!SESSION_COOKIES) {
-    log('⚠️  No cookies set. Use POST /api/set-cookies or set FRESHSERVICE_COOKIES env var');
+app.listen(PORT, '0.0.0.0', () => {
+  log(`Freshservice API running on 0.0.0.0:${PORT}`);
+  
+  if (CONFIG.email && CONFIG.password) {
+    log('Credentials configured. Login will occur on first API request.');
+  } else {
+    log('WARNING: No credentials configured.');
+    log('Set FRESHSERVICE_EMAIL and FRESHSERVICE_PASSWORD environment variables.');
   }
 });
