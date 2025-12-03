@@ -8,11 +8,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: RENDER
-        value: "true"
-      - key: FRESHSERVICE_EMAIL
-        sync: false
-      - key: FRESHSERVICE_PASSWORD
+      - key: FRESHSERVICE_API_KEY
         sync: false
       - key: FRESHSERVICE_DOMAIN
         value: yondrgroup.freshservice.com
+      - key: FRESHSERVICE_GROUP_ID
+        value: "27000189625"
