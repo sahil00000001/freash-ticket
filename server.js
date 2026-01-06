@@ -81,13 +81,26 @@ function analyzeTickets(tickets) {
       ? Math.round(t.stats.first_resp_time_in_secs / 60) 
       : null;
     
+    // Extract name from subject if requester name is unknown
+    let requesterName = t.requester?.name;
+    if (!requesterName || requesterName === 'Unknown') {
+      const subject = t.subject || '';
+      // Regex to match "for [Name] :" or "for [Name] -"
+      const match = subject.match(/for\s+(.*?)\s*[:|-]/i);
+      if (match && match[1]) {
+        requesterName = match[1].trim();
+      } else {
+        requesterName = 'Unknown';
+      }
+    }
+
     return {
       ticket_id: `#${t.id}`,
       subject: t.subject?.substring(0, 100) || 'No subject',
       priority_value: t.priority,
       priority_label: priorityMap[t.priority] || 'Unknown',
       requester_id: t.requester_id,
-      requester_name: t.requester?.name || 'Unknown',
+      requester_name: requesterName,
       status: statusMap[t.status] || `Status ${t.status}`,
       attendance_status: isFresh ? 'FRESH' : 'REPLIED',
       update_status: getUpdateStatus(t),
