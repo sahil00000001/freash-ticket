@@ -1,0 +1,107 @@
+{
+  "endpoint": "Tickets Updated Since",
+  "days_lookback": 1,
+  "analysis_timestamp": "2025-12-29T08:11:57.482Z",
+  "total_tickets": 7,
+  "summary": {
+    "fresh_tickets": 0,
+    "replied_tickets": 7,
+    "p1_count": 0,
+    "p2_count": 0,
+    "p3_count": 7,
+    "p4_count": 0
+  },
+  "tickets": [
+    {
+      "ticket_id": "#114189",
+      "subject": "YondrOne Ticket Request for Austin Leavitt : NOV1B access [Lowest (P4)]",
+      "priority_value": 2,
+      "priority_label": "P3",
+      "requester_id": 27003842801,
+      "requester_name": "Austin Leavitt",
+      "status": "Closed",
+      "attendance_status": "REPLIED",
+      "response_time_minutes": null,
+      "created_at": "2025-12-28T11:35:23Z",
+      "updated_at": "2025-12-28T15:31:23Z"
+    },
+    {
+      "ticket_id": "#114182",
+      "subject": "YondrOne Ticket Request for Michael Johnson : Requesting YondrOne Access for NOV1B [High (P2)]",
+      "priority_value": 2,
+      "priority_label": "P3",
+      "requester_id": 27003842797,
+      "requester_name": "Michael Johnson",
+      "status": "Closed",
+      "attendance_status": "REPLIED",
+      "response_time_minutes": null,
+      "created_at": "2025-12-28T09:11:35Z",
+      "updated_at": "2025-12-28T15:33:03Z"
+    },
+    {
+      "ticket_id": "#114156",
+      "subject": "YondrOne Ticket Request for Hichem Ben Romdhane : Access to NOV1B in Yondrone [Medium (P3)]",
+      "priority_value": 2,
+      "priority_label": "P3",
+      "requester_id": 27003798079,
+      "requester_name": "Hichem Ben Romdhane",
+      "status": "Closed",
+      "attendance_status": "REPLIED",
+      "response_time_minutes": null,
+      "created_at": "2025-12-26T18:51:44Z",
+      "updated_at": "2025-12-28T15:27:58Z"
+    },
+    {
+      "ticket_id": "#114148",
+      "subject": "Reactive ticket notification to the customer",
+      "priority_value": 2,
+      "priority_label": "P3",
+      "requester_id": 27003269934,
+      "requester_name": "Norman Janssen",
+      "status": "Open",
+      "attendance_status": "REPLIED",
+      "response_time_minutes": null,
+      "created_at": "2025-12-26T15:42:50Z",
+      "updated_at": "2025-12-28T15:48:51Z"
+    },
+    {
+      "ticket_id": "#114146",
+      "subject": "Retroactively",
+      "priority_value": 2,
+      "priority_label": "P3",
+      "requester_id": 27003633843,
+      "requester_name": "Jean-Luc Knaupp",
+      "status": "Open",
+      "attendance_status": "REPLIED",
+      "response_time_minutes": null,
+      "created_at": "2025-12-26T15:17:54Z",
+      "updated_at": "2025-12-28T15:49:32Z"
+    },
+    {
+      "ticket_id": "#114141",
+      "subject": "Yondr one ticket created wrong",
+      "priority_value": 2,
+      "priority_label": "P3",
+      "requester_id": 27003633843,
+      "requester_name": "Jean-Luc Knaupp",
+      "status": "Open",
+      "attendance_status": "REPLIED",
+      "response_time_minutes": null,
+      "created_at": "2025-12-26T14:07:55Z",
+      "updated_at": "2025-12-28T15:33:37Z"
+    },
+    {
+      "ticket_id": "#113603",
+      "subject": "YondrOne Ticket Request for Pawel Piotrowski : Asset Register Update [Low (P4)]",
+      "priority_value": 2,
+      "priority_label": "P3",
+      "requester_id": 27003853287,
+      "requester_name": "Pawel Piotrowski",
+      "status": "Closed",
+      "attendance_status": "REPLIED",
+      "response_time_minutes": 17,
+      "created_at": "2025-12-19T11:17:37Z",
+      "updated_at": "2025-12-29T05:12:18Z"
+    }
+  ]
+}

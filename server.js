@@ -1,19 +1,17 @@
 // server.js - Freshservice Ticket Analyzer API
-// Uses API Key authentication (required since May 2023)
+// Three main endpoints for ticket retrieval
 
 require('dotenv').config();
 const express = require('express');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 const CONFIG = {
   domain: process.env.FRESHSERVICE_DOMAIN || 'yondrgroup.freshservice.com',
   apiKey: process.env.FRESHSERVICE_API_KEY || '',
-  filterId: process.env.FRESHSERVICE_FILTER_ID || '27000160172',
   groupId: process.env.FRESHSERVICE_GROUP_ID || '27000189625',
-  workspaceId: parseInt(process.env.FRESHSERVICE_WORKSPACE_ID) || 2,
-  createdWithinMinutes: 1440
+  workspaceId: parseInt(process.env.FRESHSERVICE_WORKSPACE_ID) || 2
 };
 
 function log(message, data = null) {
@@ -30,11 +28,52 @@ function getAuthHeader() {
   return `Basic ${authString}`;
 }
 
+function formatDate(isoString) {
+  if (!isoString) return null;
+  const date = new Date(isoString);
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 function analyzeTickets(tickets) {
   log(`Analyzing ${tickets.length} tickets...`);
   
   const priorityMap = { 1: 'P4', 2: 'P3', 3: 'P2', 4: 'P1' };
   const statusMap = { 2: 'Open', 3: 'Pending', 4: 'Resolved', 5: 'Closed' };
+  
+  const getUpdateStatus = (ticket) => {
+    const stats = ticket.stats;
+    if (!stats) return 'Unknown';
+    
+    // Check if resolved or closed
+    if (stats.resolved_at) return 'Resolved - Work Complete';
+    if (stats.closed_at) return 'Closed';
+    
+    // Check communication flow
+    const agentResponded = !!stats.agent_responded_at;
+    const requesterResponded = !!stats.requester_responded_at;
+    const inboundCount = stats.inbound_count || 0;
+    
+    if (agentResponded && requesterResponded && inboundCount > 1) {
+      return 'Active Discussion - Team & Client Communicating';
+    }
+    
+    if (agentResponded && inboundCount > 1) {
+      return 'Client Replied - Team Reviewing';
+    }
+    
+    if (agentResponded && !requesterResponded) {
+      return 'Awaiting Client Response - Team Replied';
+    }
+    
+    if (agentResponded) {
+      return 'Team Working On It - In Progress';
+    }
+    
+    return 'New/Fresh - Not Yet Addressed';
+  };
   
   const analyzedTickets = tickets.map(t => {
     const isFresh = !t.stats?.agent_responded_at && (t.stats?.outbound_count || 0) <= 1;
@@ -45,14 +84,16 @@ function analyzeTickets(tickets) {
     return {
       ticket_id: `#${t.id}`,
       subject: t.subject?.substring(0, 100) || 'No subject',
-      priority: priorityMap[t.priority] || 'P4',
+      priority_value: t.priority,
+      priority_label: priorityMap[t.priority] || 'Unknown',
       requester_id: t.requester_id,
       requester_name: t.requester?.name || 'Unknown',
       status: statusMap[t.status] || `Status ${t.status}`,
       attendance_status: isFresh ? 'FRESH' : 'REPLIED',
+      update_status: getUpdateStatus(t),
       response_time_minutes: respTime,
-      created_at: t.created_at,
-      updated_at: t.updated_at
+      created_at: formatDate(t.created_at),
+      updated_at: formatDate(t.updated_at)
     };
   });
 
@@ -62,10 +103,10 @@ function analyzeTickets(tickets) {
     summary: {
       fresh_tickets: analyzedTickets.filter(t => t.attendance_status === 'FRESH').length,
       replied_tickets: analyzedTickets.filter(t => t.attendance_status === 'REPLIED').length,
-      p1_count: analyzedTickets.filter(t => t.priority === 'P1').length,
-      p2_count: analyzedTickets.filter(t => t.priority === 'P2').length,
-      p3_count: analyzedTickets.filter(t => t.priority === 'P3').length,
-      p4_count: analyzedTickets.filter(t => t.priority === 'P4').length
+      p1_count: analyzedTickets.filter(t => t.priority_label === 'P1').length,
+      p2_count: analyzedTickets.filter(t => t.priority_label === 'P2').length,
+      p3_count: analyzedTickets.filter(t => t.priority_label === 'P3').length,
+      p4_count: analyzedTickets.filter(t => t.priority_label === 'P4').length
     },
     tickets: analyzedTickets
   };
@@ -74,38 +115,19 @@ function analyzeTickets(tickets) {
   return analysis;
 }
 
-function getTodayMidnight() {
-  const now = new Date();
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  return midnight.toISOString().split('.')[0] + 'Z';
-}
-
-async function fetchTicketsFromAPI(options = {}) {
-  const { minutes = CONFIG.createdWithinMinutes, filter = null } = options;
-  
+// API 1: Tickets created today
+async function fetchTicketsCreatedToday() {
   const authHeader = getAuthHeader();
+  const today = new Date().toISOString().split('T')[0];
   
-  let dateStr;
-  let filterDescription;
+  log(`Fetching tickets created today (${today})`);
   
-  if (filter === 'today') {
-    dateStr = getTodayMidnight();
-    filterDescription = "today's tickets";
-  } else {
-    const cutoffDate = new Date(Date.now() - minutes * 60 * 1000);
-    dateStr = cutoffDate.toISOString().split('.')[0] + 'Z';
-    filterDescription = `last ${minutes} minutes`;
-  }
-  
-  log(`Starting ticket fetch (${filterDescription})`);
-
   const allTickets = [];
   let currentPage = 1;
   let hasMore = true;
 
   while (hasMore) {
-    let queryParts = [];
-    queryParts.push(`created_at:>'${dateStr}'`);
+    let queryParts = [`created_at:>'${today}'`];
     
     if (CONFIG.groupId) {
       queryParts.push(`group_id:${CONFIG.groupId}`);
@@ -120,35 +142,28 @@ async function fetchTicketsFromAPI(options = {}) {
     });
 
     const url = `https://${CONFIG.domain}/api/v2/tickets/filter?${params}`;
-    log(`Fetching page ${currentPage}... Query: ${query}`);
 
     try {
+      log(`Sending request to: ${url}`);
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
           'Authorization': authHeader,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: AbortSignal.timeout(10000)
       });
 
-      if (response.status === 401) {
-        throw new Error('Invalid API key. Please check your FRESHSERVICE_API_KEY.');
-      }
-
-      if (response.status === 403) {
-        throw new Error('Access denied. Your API key may not have permission to access tickets.');
-      }
-
+      log(`Response status: ${response.status}`);
       if (!response.ok) {
         const errorText = await response.text();
+        log(`Error body: ${errorText}`);
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
       const tickets = data.tickets || [];
-      
-      log(`Page ${currentPage}: Found ${tickets.length} tickets`);
       
       allTickets.push(...tickets);
       
@@ -157,14 +172,142 @@ async function fetchTicketsFromAPI(options = {}) {
       } else {
         currentPage++;
       }
-
     } catch (error) {
-      log(`ERROR on page ${currentPage}: ${error.message}`);
+      log(`ERROR: ${error.message}`);
       throw error;
     }
   }
 
-  log(`Total tickets fetched: ${allTickets.length}`);
+  return allTickets;
+}
+
+// API 2: Active tickets (status Open or Pending)
+async function fetchActiveTickets() {
+  const authHeader = getAuthHeader();
+  
+  log('Fetching active tickets (Open or Pending)');
+  
+  const allTickets = [];
+  let currentPage = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    let queryParts = [`(status:2 OR status:3)`];
+    
+    if (CONFIG.groupId) {
+      queryParts.push(`group_id:${CONFIG.groupId}`);
+    }
+    
+    const query = `"${queryParts.join(' AND ')}"`;
+    
+    const params = new URLSearchParams({
+      query: query,
+      per_page: '100',
+      page: currentPage.toString()
+    });
+
+    const url = `https://${CONFIG.domain}/api/v2/tickets/filter?${params}`;
+
+    try {
+      log(`Sending request to: ${url}`);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      log(`Response status: ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        log(`Error body: ${errorText}`);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const tickets = data.tickets || [];
+      
+      allTickets.push(...tickets);
+      
+      if (tickets.length < 100) {
+        hasMore = false;
+      } else {
+        currentPage++;
+      }
+    } catch (error) {
+      log(`ERROR: ${error.message}`);
+      throw error;
+    }
+  }
+
+  return allTickets;
+}
+
+// API 3: Tickets updated since (with datetime support)
+async function fetchTicketsUpdatedSince(days = 1) {
+  const authHeader = getAuthHeader();
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceDate = since.toISOString();
+  
+  log(`Fetching tickets updated since ${sinceDate}`);
+  
+  const allTickets = [];
+  let currentPage = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const params = new URLSearchParams({
+      updated_since: sinceDate,
+      workspace_id: CONFIG.workspaceId.toString(),
+      per_page: '100',
+      page: currentPage.toString(),
+      include: 'stats,requester'
+    });
+
+    const url = `https://${CONFIG.domain}/api/v2/tickets?${params}`;
+
+    try {
+      log(`Sending request to: ${url}`);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      log(`Response status: ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        log(`Error body: ${errorText}`);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const tickets = data.tickets || [];
+      
+      // Filter by group_id client-side
+      const filteredTickets = tickets.filter(t => !CONFIG.groupId || t.group_id == CONFIG.groupId);
+      
+      allTickets.push(...filteredTickets);
+      
+      if (tickets.length < 100) {
+        hasMore = false;
+      } else {
+        currentPage++;
+      }
+    } catch (error) {
+      log(`ERROR: ${error.message}`);
+      throw error;
+    }
+  }
+
   return allTickets;
 }
 
@@ -213,8 +356,8 @@ app.get('/', async (req, res) => {
   
   res.json({ 
     status: 'ok', 
-    service: 'Freshservice Ticket Analyzer',
-    version: '3.0.0-apikey',
+    service: 'Freshservice Ticket API',
+    version: '3.0.0',
     authentication: {
       method: 'API Key (Basic Auth)',
       api_key_configured: apiKeySet,
@@ -223,18 +366,13 @@ app.get('/', async (req, res) => {
     config: {
       domain: CONFIG.domain,
       workspace_id: CONFIG.workspaceId,
-      group_id: CONFIG.groupId,
-      filter_id: CONFIG.filterId
+      group_id: CONFIG.groupId
     },
     endpoints: {
       'GET /': 'Health check with connection test',
-      'GET /api/tickets': 'Full ticket analysis (default: last 24 hours)',
-      'GET /api/tickets?minutes=1440': 'Tickets from last 24 hours',
-      'GET /api/tickets?filter=today': 'Tickets created today',
-      'GET /api/tickets/fresh': 'Only unattended tickets',
-      'GET /api/tickets/fresh?filter=today': 'Unattended tickets created today',
-      'GET /api/tickets/summary': 'Summary counts only',
-      'GET /api/tickets/summary?filter=today': 'Summary of today\'s tickets'
+      'GET /api/tickets-created-today': 'All tickets created today',
+      'GET /api/active-tickets': 'All active tickets (Open or Pending status)',
+      'GET /api/tickets-updated-since?days=1': 'Tickets updated in last N days (default: 1)'
     },
     setup: !apiKeySet ? {
       required_env_vars: [
@@ -242,7 +380,6 @@ app.get('/', async (req, res) => {
       ],
       optional_env_vars: [
         'FRESHSERVICE_DOMAIN - Default: yondrgroup.freshservice.com',
-        'FRESHSERVICE_FILTER_ID - Default: 27000160172',
         'FRESHSERVICE_GROUP_ID - Default: 27000189625',
         'FRESHSERVICE_WORKSPACE_ID - Default: 2'
       ],
@@ -257,72 +394,71 @@ app.get('/', async (req, res) => {
   });
 });
 
-app.get('/api/tickets', async (req, res) => {
-  const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  const filter = req.query.filter || null;
-  log(`=== GET /api/tickets called (minutes: ${minutes}, filter: ${filter || 'none'}) ===`);
+// API 1: Tickets created today
+app.get('/api/tickets-created-today', async (req, res) => {
+  log('=== GET /api/tickets-created-today called ===');
   
   try {
-    log('Step 1: Fetching tickets from Freshservice...');
-    const tickets = await fetchTicketsFromAPI({ minutes, filter });
-    
-    log('Step 2: Analyzing tickets...');
+    const tickets = await fetchTicketsCreatedToday();
     const analysis = analyzeTickets(tickets);
-    
-    log('Step 3: Sending response...');
-    res.json(analysis);
-    
-    log('=== Request completed successfully ===');
-    
-  } catch (error) {
-    log(`ERROR: ${error.message}`);
-    res.status(500).json({ 
-      error: error.message,
-      hint: error.message.includes('API key') ? 
-        'Set FRESHSERVICE_API_KEY environment variable with your API key from Profile Settings' : null
-    });
-  }
-});
-
-app.get('/api/tickets/fresh', async (req, res) => {
-  const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  const filter = req.query.filter || null;
-  log(`=== GET /api/tickets/fresh called (minutes: ${minutes}, filter: ${filter || 'none'}) ===`);
-  
-  try {
-    const tickets = await fetchTicketsFromAPI({ minutes, filter });
-    const analysis = analyzeTickets(tickets);
-    const freshTickets = analysis.tickets.filter(t => t.attendance_status === 'FRESH');
-    
-    log(`Found ${freshTickets.length} fresh tickets`);
     
     res.json({
+      endpoint: 'Tickets Created Today',
       analysis_timestamp: analysis.analysis_timestamp,
-      total_fresh: freshTickets.length,
-      tickets: freshTickets
+      total_tickets: analysis.total_tickets,
+      summary: analysis.summary,
+      tickets: analysis.tickets
     });
     
+    log('=== Request completed successfully ===');
   } catch (error) {
     log(`ERROR: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/tickets/summary', async (req, res) => {
-  const minutes = parseInt(req.query.minutes) || CONFIG.createdWithinMinutes;
-  const filter = req.query.filter || null;
-  log(`=== GET /api/tickets/summary called (minutes: ${minutes}, filter: ${filter || 'none'}) ===`);
+// API 2: Active tickets (Open or Pending)
+app.get('/api/active-tickets', async (req, res) => {
+  log('=== GET /api/active-tickets called ===');
   
   try {
-    const tickets = await fetchTicketsFromAPI({ minutes, filter });
+    const tickets = await fetchActiveTickets();
     const analysis = analyzeTickets(tickets);
     
     res.json({
+      endpoint: 'Active Tickets (Open or Pending)',
       analysis_timestamp: analysis.analysis_timestamp,
       total_tickets: analysis.total_tickets,
-      summary: analysis.summary
+      summary: analysis.summary,
+      tickets: analysis.tickets
     });
     
+    log('=== Request completed successfully ===');
+  } catch (error) {
+    log(`ERROR: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API 3: Tickets updated since
+app.get('/api/tickets-updated-since', async (req, res) => {
+  const days = parseInt(req.query.days) || 1;
+  log(`=== GET /api/tickets-updated-since called (days: ${days}) ===`);
+  
+  try {
+    const tickets = await fetchTicketsUpdatedSince(days);
+    const analysis = analyzeTickets(tickets);
+    
+    res.json({
+      endpoint: 'Tickets Updated Since',
+      days_lookback: days,
+      analysis_timestamp: analysis.analysis_timestamp,
+      total_tickets: analysis.total_tickets,
+      summary: analysis.summary,
+      tickets: analysis.tickets
+    });
+    
+    log('=== Request completed successfully ===');
   } catch (error) {
     log(`ERROR: ${error.message}`);
     res.status(500).json({ error: error.message });
@@ -331,7 +467,7 @@ app.get('/api/tickets/summary', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   log(`Freshservice API running on 0.0.0.0:${PORT}`);
-  log('Version: 3.0.0-apikey (API Key authentication)');
+  log('Version: 3.0.0');
   
   if (CONFIG.apiKey) {
     log('API key configured. Ready to fetch tickets.');

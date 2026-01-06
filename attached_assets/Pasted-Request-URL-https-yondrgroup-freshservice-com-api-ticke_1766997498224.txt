@@ -1,0 +1,49 @@
+Request URL
+https://yondrgroup.freshservice.com/api/_/tickets?advanced_query_hash=&cache=true&filter=27000160172&include=stats%2Cresponder%2Crequester%2Cticket_states%2Cticket_status%2Cgroup&order_by=created_at&order_type=desc&page=1&per_page=100&query_hash=%5B%7B%22value%22%3A%5B%7B%22id%22%3A2%7D%5D%2C%22condition%22%3A%22workspace_id%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%2C%7B%22value%22%3A%5B%222%22%2C%223%22%5D%2C%22condition%22%3A%22status%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%2C%7B%22value%22%3A%5B%2227000189625%22%5D%2C%22condition%22%3A%22group_id%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%5D&workspace_id=2
+Request Method
+GET
+Status Code
+200 OK
+Remote Address
+162.159.140.147:443
+Referrer Policy
+strict-origin-when-cross-origin
+:authority
+yondrgroup.freshservice.com
+:method
+GET
+:path
+/api/_/tickets?advanced_query_hash=&cache=true&filter=27000160172&include=stats%2Cresponder%2Crequester%2Cticket_states%2Cticket_status%2Cgroup&order_by=created_at&order_type=desc&page=1&per_page=100&query_hash=%5B%7B%22value%22%3A%5B%7B%22id%22%3A2%7D%5D%2C%22condition%22%3A%22workspace_id%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%2C%7B%22value%22%3A%5B%222%22%2C%223%22%5D%2C%22condition%22%3A%22status%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%2C%7B%22value%22%3A%5B%2227000189625%22%5D%2C%22condition%22%3A%22group_id%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%5D&workspace_id=2
+:scheme
+https
+accept
+*/*
+accept-encoding
+gzip, deflate, br, zstd
+accept-language
+en
+cache-control
+no-cache
+cookie
+_BEAMER_USER_ID_bxOQALFw21023=1c083f8e-246a-4e9d-9235-f0af57bd6cbb; _BEAMER_FIRST_VISIT_bxOQALFw21023=2025-07-14T06:34:22.169Z; _BEAMER_DATE_bxOQALFw21023=2025-08-16T04:53:55.487Z; _x_m=x_n; _x_d=x_5; _x_w=7001; helpdesk_node_session=cb9999b77bc068d55732c9d0a77afd615c052e606d91157143b250bbdd83c3aa83107cf020b2d0723555d2e11de264288969ad13d31e2f0c04f197caff523fe4; user_credentials=BAhJIgGNNzA3NTA2OWM4ZDMwNjA5NmMyNGQ2YTljNjk0YWIyNDc4MDFhYTQ4YjdkMDAwYWQ2NTEyYWMwNzQ0MTc5ZWM5NGQ4OTI2ZWIwNzVjOTY0NmJhMjNmNDkxNmNmNjk2Yjc0ZWQyOTJjMDgyZWRkMTQ5ZTdmNmY4YzQ3MGVkOWIxMmI6OjI3MDAyNTU0MjE2BjoGRVQ%3D--5f94394d8b3c634f2c03dd2dd8f40c835e473360; helpdesk_url=helpdesk.yondrhelp.com; fw-session-id=6a0a9f1e3942687e56dcf8e27d9736c73b61c0b1967adc526bc8fbcce7f34eaebd757d5e88835819535143609c4848cd9bf242cddd95b28077c5db0d1eaa2dd2c551ad33360cef71f849eed65a71d760df2fcf4467b526bc1407dc4ac4c759cd8dcd0067c04f48694234bfa0bea0a09b; current_workspace_id=2; filter_name=27000160172; wf_order=created_at; wf_order_type=desc; search_sort=relevance; __cf_bm=jpm8_BEti7FRcR_d0cMMAx.VXt_lR6QI8ZaQRLSqd0A-1766997385-1.0.1.1-Wax5vhEXCwncbHm8kDlj8.j7vqkjggX.hBO5zXUZFSvuZ.eRf4.neG13mCg0SFU1_VtR_9BiH8QMpsOXD_JUpouKz4hxNbkFh_eNGMbLv9E; _BEAMER_FILTER_BY_URL_bxOQALFw21023=true; _BEAMER_FILTER_BY_URL_bxOQALFw21023=true; _itildesk_session=Ym9OaFVsL0JJaUY3T2hTV3NtdTFRcjNHVFF4T3VxSTdvblNJb0JJZXJ3cEV4Ny8zOUdhak5WamJEY2IrM1dzRDVicmtnU2ZYUzFJNVFvQXJrTkwxRlZiaG53WjN6L3NyR0dRQkwzeFlSYkVQSGd4anByNnhsTWNNSTlsQTVvdnA4OEZkVlhta2pTRVpXYjJIUkVNUWFOeTI0WGx5S2QwRitOc2hTNjU0TVlZSlFOQVRpY21Ha1BMOEdSOEJqSkZoa0VKUnAvWHpGVHZUbCtSVG9QcTNUZ2dsMGJ3QWxFQS9MVXU3MVNKN2J0R1FwdjN4RUgvME56UE91Uzh0eUpsdTcrbVBuMDFDUUpsYXVKZkszYzV0Rml0OEFBN3FHb3JSdERFSXZzU3FWMnBrWkxTKzQvUEZBRktHZFVteTA5WUlVWUJXN3h4aXVVSGVYdVhvNzJqdVQxN09vd2twMEpiRGdpVFB2Nzhhb0NYMnlwRlJkb2VFRDRLTWFYaGg3RWVxSDZLdjlpdnhEV2M1SGlRb1MrSHNkbkZOelA3RENYN2RVY3JaYXQzSmJlS0t5bS9Zc1dYOG10U3hOVFFFN3BvUnBDVk1QcnM1YTJhOWZrdldSSzBDNWxOQ2hpM2ZsT1RRTVVqWnZtM1NtcXhnNWt3b3NUNllBT0pKTS9oVjVxVCtVYlJEVU5QK2h0WCs3Y1l4MU5LU2laaUxxZTJXSHBxeVFDRUxQVXJ0TG8wOHVWNTF6V1dNUlAxaG5GSU44ZmVQSSsxS0RqTjB6VkNvTVpPN2Q2WEVCeTBXbXJUZ3FDcUpXQ1RmNzRPWTZUWkZabGpWRXVCTW1XbmJvWlNKdlNzM2Fuc1NpZFM1ci9TcXoyckRlNU9STFc3aCtHRGo4b1BneDQ0bUFETVJScVRwRGpvOFFKRVJZd1dTUlZPeDVqdFVGS3VjSm1NZ2NZVVVSLyttQVhHdGtLOC8zYzZjNVc2Z3FCdmpIa3hrZ0JYQ0diUThTZzRlejRSZlJsM3hSTm01Z3krZTl0bTBUbXBYMTlSUytoOFNxY0oxUnE0bDBFQzFUei94T3k5SzlJUmYxTWdFZ3BTaDZOeDdDS3FqK3daMUEyY2phQVZxRitxMmJKdnJ2WFRGdXk2b1lmUzllV3k4NUlvUkQ1RmhCTk5TU3FyRWdhVHhpbWprMUtqQ3Z0Uk5PNG81UzFDQVQ4UHFJREd1ZnVLUEFERXR2S1hFdVlRTXRSRkNvRllVL3J4UGNDZGN2NnlOWUdoOXRvd3gyT2JLVEhBdjVYbk9mYWt5TUZ3OHVUYyszcmtTUXZqZ1VtVzUvQ0xPU2FvNHNmWVdTU1NSVzhFVkRrMGMxUDFDY1RXN2Y1ZVA0YkYrMXJnUVRXbHRSVFRTQStTVitaVFZTbHNVSS81VHJ2amdZVFk9LS1qOTZPdFpvZ0FkbzdWSnZHTzFKampnPT0%3D--ff8949bae4313518ba52efac57a066208879b499; _BEAMER_LAST_UPDATE_bxOQALFw21023=1766997462106
+pragma
+no-cache
+priority
+u=1, i
+referer
+https://yondrgroup.freshservice.com/a/tickets/view/27000160172?order_by=created_at&order_type=desc&per_page=100&query_hash=%5B%7B%22value%22%3A%5B%7B%22id%22%3A2%7D%5D%2C%22condition%22%3A%22workspace_id%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%2C%7B%22value%22%3A%5B%222%22%2C%223%22%5D%2C%22condition%22%3A%22status%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%2C%7B%22value%22%3A%5B%2227000189625%22%5D%2C%22condition%22%3A%22group_id%22%2C%22operator%22%3A%22is_in%22%2C%22type%22%3A%22default%22%7D%5D
+sec-ch-ua
+"Microsoft Edge";v="143", "Chromium";v="143", "Not A(Brand";v="24"
+sec-ch-ua-mobile
+?0
+sec-ch-ua-platform
+"Windows"
+sec-fetch-dest
+empty
+sec-fetch-mode
+cors
+sec-fetch-site
+same-origin
+user-agent
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+-url:http://localhost:3000/node_modules/.vite/deps/chunk-RY6NLCXT.js?v=98b3ad84

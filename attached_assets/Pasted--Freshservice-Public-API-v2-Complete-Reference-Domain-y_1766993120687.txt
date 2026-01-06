@@ -1,0 +1,243 @@
+# Freshservice Public API v2 - Complete Reference
+**Domain:** yondrgroup.freshservice.com | **Date:** Dec 29, 2025
+
+---
+
+## 🔑 Authentication
+```
+Base URL: https://yondrgroup.freshservice.com/api/v2
+Authorization: Basic {base64(API_KEY:X)}
+Content-Type: application/json
+```
+
+---
+
+## 📌 Your Filter IDs
+
+| Filter | Name | ID |
+|--------|------|-----|
+| Workspace | Yondr Support | `2` |
+| Group | YondrOne Devops | `27000189625` |
+
+---
+
+## 📊 Status & Priority Reference
+
+| Status | Value | | Priority | Value |
+|--------|-------|-|----------|-------|
+| Open | 2 | | Low | 1 |
+| Pending | 3 | | Medium | 2 |
+| Resolved | 4 | | High | 3 |
+| Closed | 5 | | Urgent | 4 |
+
+---
+
+## 🚀 Three API Endpoints
+
+### 1. Tickets Created Today
+```
+GET https://yondrgroup.freshservice.com/api/v2/tickets/filter
+  ?query="group_id:27000189625 AND created_at:>'{YYYY-MM-DD}'"
+  &workspace_id=2
+  &per_page=100
+  &page=1
+```
+
+### 2. Active Tickets Updated Today
+```
+GET https://yondrgroup.freshservice.com/api/v2/tickets/filter
+  ?query="group_id:27000189625 AND (status:2 OR status:3) AND updated_at:>'{YYYY-MM-DD}'"
+  &workspace_id=2
+  &per_page=100
+  &page=1
+```
+
+### 3. Tickets Updated Since (Full DateTime Support)
+```
+GET https://yondrgroup.freshservice.com/api/v2/tickets
+  ?updated_since={ISO_DATETIME}
+  &workspace_id=2
+  &per_page=100
+  &page=1
+  &include=stats,requester
+```
+*Note: Filter for group_id client-side after fetching*
+
+---
+
+## 📦 Include Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `stats` | closed_at, resolved_at, first_responded_at |
+| `requester` | Requester id, name, email, phone |
+| `conversations` | Ticket conversations |
+
+**Usage:** `&include=stats,requester`
+
+---
+
+## ⚙️ Query Operators
+
+| Operator | Example |
+|----------|---------|
+| `:` (equals) | `status:2` |
+| `:>` (greater than) | `created_at:>'2025-12-29'` |
+| `:<` (less than) | `priority:<4` |
+| `AND` / `OR` | `status:2 OR status:3` |
+
+---
+
+## 📄 Response Structure
+
+```json
+{
+  "tickets": [
+    {
+      "id": 27000160172,
+      "subject": "Ticket Subject",
+      "status": 2,
+      "priority": 3,
+      "group_id": 27000189625,
+      "requester_id": 1000000678,
+      "responder_id": null,
+      "created_at": "2025-12-29T10:34:28Z",
+      "updated_at": "2025-12-29T08:15:00Z",
+      "due_by": "2025-12-30T10:34:28Z",
+      "fr_due_by": "2025-12-29T10:34:28Z",
+      "description_text": "Ticket description...",
+      "custom_fields": {}
+    }
+  ],
+  "total": 25
+}
+```
+
+---
+
+## 📑 Pagination
+
+**Response Header:**
+```
+Link: <https://domain.freshservice.com/api/v2/tickets?page=2>; rel="next"
+```
+
+**Logic:**
+- Check if `tickets.length === per_page` → more pages exist
+- Increment `page` parameter until no more results
+- Max 10 pages (300 results) for filter endpoint
+
+---
+
+## ❌ Error Responses
+
+| Status | Meaning |
+|--------|---------|
+| 400 | Bad request / Invalid query |
+| 401 | Authentication failed |
+| 403 | Access denied |
+| 404 | Not found |
+| 429 | Rate limit exceeded |
+
+**Error Body:**
+```json
+{
+  "description": "Validation failed",
+  "errors": [
+    { "field": "query", "message": "Invalid query", "code": "invalid_value" }
+  ]
+}
+```
+
+---
+
+## 💻 Implementation Code
+
+```javascript
+const API_KEY = 'YOUR_API_KEY';
+const BASE_URL = 'https://yondrgroup.freshservice.com/api/v2';
+const WORKSPACE_ID = 2;
+const GROUP_ID = '27000189625';
+
+// Helper: Get headers
+const getHeaders = () => ({
+  'Content-Type': 'application/json',
+  'Authorization': 'Basic ' + btoa(`${API_KEY}:X`)
+});
+
+// Helper: Get today's date (YYYY-MM-DD)
+const getToday = () => new Date().toISOString().split('T')[0];
+
+// API 1: Tickets Created Today
+async function getTicketsCreatedToday(page = 1) {
+  const query = encodeURIComponent(
+    `"group_id:${GROUP_ID} AND created_at:>'${getToday()}'"`
+  );
+  const url = `${BASE_URL}/tickets/filter?query=${query}&workspace_id=${WORKSPACE_ID}&per_page=100&page=${page}`;
+  
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`API Error: ${res.status}`);
+  return res.json();
+}
+
+// API 2: Active Tickets Updated Today
+async function getActiveTicketsUpdatedToday(page = 1) {
+  const query = encodeURIComponent(
+    `"group_id:${GROUP_ID} AND (status:2 OR status:3) AND updated_at:>'${getToday()}'"`
+  );
+  const url = `${BASE_URL}/tickets/filter?query=${query}&workspace_id=${WORKSPACE_ID}&per_page=100&page=${page}`;
+  
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`API Error: ${res.status}`);
+  return res.json();
+}
+
+// API 3: Tickets Updated Since (with client-side group filter)
+async function getTicketsUpdatedSince(days = 1, page = 1) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  
+  const url = `${BASE_URL}/tickets?updated_since=${since.toISOString()}&workspace_id=${WORKSPACE_ID}&per_page=100&page=${page}&include=stats,requester`;
+  
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`API Error: ${res.status}`);
+  
+  const data = await res.json();
+  // Client-side filter for group
+  data.tickets = data.tickets.filter(t => t.group_id == GROUP_ID);
+  return data;
+}
+
+// Pagination: Get ALL tickets
+async function getAllTickets(fetchFn) {
+  const allTickets = [];
+  let page = 1;
+  let hasMore = true;
+  
+  while (hasMore && page <= 10) {
+    const data = await fetchFn(page);
+    allTickets.push(...data.tickets);
+    hasMore = data.tickets.length === 100;
+    page++;
+  }
+  
+  return { tickets: allTickets, total: allTickets.length };
+}
+
+// Usage Examples
+// const todayTickets = await getTicketsCreatedToday();
+// const activeTickets = await getActiveTicketsUpdatedToday();
+// const allTodayTickets = await getAllTickets(getTicketsCreatedToday);
+```
+
+---
+
+## ⚠️ Key Limitations
+
+| Limitation | Details |
+|------------|---------|
+| Date format in filter | Only `YYYY-MM-DD` (no "today" keyword) |
+| Query max length | 512 characters |
+| Filter pagination | Max 10 pages (300 results) |
+| Per page max | 100 items |
+| Rate limit | 100-500 req/min (plan dependent) |
