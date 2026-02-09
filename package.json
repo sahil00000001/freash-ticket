@@ -1,16 +1,27 @@
 {
   "name": "freshservice-ticket-api",
   "version": "3.0.0",
-  "description": "Freshservice Ticket Analyzer API",
-  "main": "server.js",
+  "description": "Freshservice Ticket Analyzer API - Next.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": "20.x"
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start"
   },
   "dependencies": {
-    "dotenv": "^16.6.1",
-    "express": "^4.22.1"
+    "next": "^16",
+    "react": "^19",
+    "react-dom": "^19",
+    "lucide-react": "^0.474.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.0.0",
+    "tw-animate-css": "^1.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }
